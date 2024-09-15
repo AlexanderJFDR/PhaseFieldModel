@@ -1,0 +1,87 @@
+//拉伸网格
+func mesh tensormesh(real width, real length, real crackl, real crackw, real m, real n)
+{
+    real Slope = crackl/(2*crackw);
+    border a1(t=0, width){x=t; y=0; label=1;}
+    border a2(t=0, length/2){x=width; y=t; label=2;}
+    border a3(t=0, width-crackw){x=width-t; y=length/2; label=0;}
+    border a0(t=0, crackw){x=crackw-t; y=(length)/2-Slope*t; label=10;}
+    border a4(t=0, (length-crackl)/2){x=0; y=(length-crackl)/2-t; label=4;}
+    mesh Th1 = buildmesh(a1(m/10) + a2(n/2) + a3(10*m*(width-crackw)/width) + a0(10*crackw/width*m) + a4((length-crackl)/length/2*n));
+    plot(Th1,wait=true);
+    int[int] L =[1, 3];
+    mesh Th2 = movemesh(Th1, [x, length-y]); //生成对称网格
+    Th2 = change(Th2, label = L);
+    mesh Th = Th2 + Th1;
+    plot(Th,wait=true);
+    return Th;
+}
+
+//剪切网格
+func mesh shearmesh(real width, real length, real crackl, real crackw, real m, real n)
+{
+    real Slope = crackl/(2*crackw);
+    border a1(t=0, width/2){x=t; y=0; label=1;}
+    border a2(t=0, width/2){x=t+width/2; y=0; label=1;}
+    border a3(t=0, length/2){x=width; y=t; label=2;}
+    border a4(t=0, length/2){x=width; y=length/2+t; label=2;}
+    border a5(t=0, width){x=width-t; y=length; label=3;}
+    border a6(t=0, (length-crackl)/2){x=0; y=length-t; label=4;}
+    border a7(t=0, crackw){x=t; y=(length+crackl)/2-Slope*t; label=10;}
+    border a8(t=0, crackw){x=crackw-t; y=length/2-Slope*t; label=10;}
+    border a9(t=0, (length-crackl)/2){x=0; y=(length-crackl)/2-t; label=4;}
+    mesh Th = buildmesh(a1(2*m)+a2(5*m)+a3(3*n)+a4(n)+a5(m/2)+a6(n/5)+a7(2*m)+a8(3*m)+a9(n/2));
+    plot(Th,wait=true);
+    return Th;
+}
+
+//origin拉伸网格
+func mesh originmesh(real width, real length, real crackl, real crackw, real m, real n)
+{
+    border a1(t=0, width){x=t; y=0; label=1;}
+    border a2(t=0, length/2){x=width; y=t; label=2;}
+    border a3(t=0, width-crackw){x=width-t; y=length/2; label=0;}
+    border a4(t=0, crackl/2){x=crackw; y=length/2-t; label=10;}
+    border a5(t=0, crackw){x=crackw-t; y=(length-crackl)/2; label=10;}
+    border a6(t=0, (length-crackl)/2){x=0; y=(length-crackl)/2-t; label=4;}
+    mesh Th1 = buildmesh(a1(m/20) + a2(n/2) + a3(2*m*(width-crackw)/width) +a4(2*m*crackl/width)+ a5(2*crackw/width*m) + a6((length-crackl)/length/2*n));
+
+    int[int] L =[1, 3];
+    mesh Th2 = movemesh(Th1, [x, length-y]); //生成对称网格
+    Th2 = change(Th2, label = L);
+    mesh Th = Th2 + Th1;
+    plot(Th,wait=true);
+    return Th;
+}
+
+//孔洞拉伸网格
+func mesh holemesh(real width, real length, real r, real m, real n)
+{
+    border a1(t=0, width){x=t; y=0; label=1;}
+    border a2(t=0, length/2){x=width; y=t; label=2;}
+    border a3(t=0, width/2-r){x=width-t; y=length/2; label=0;}
+    border a4(t=0, pi){x=width/2+r*cos(t); y=length/2-r*sin(t); label=10;}
+    border a5(t=0, width/2-r){x=width/2-r-t; y=length/2; label=0;}
+    border a6(t=0, length/2){x=0; y=length/2-t; label=4;}
+    mesh Th1 = buildmesh(a1(m/30) + a2(n/2) + a3(2*m*(width/2-r)/width) +a4(m*r/width/2)+ a5(2*m*(width/2-r)/width) + a6(n/2));
+
+    int[int] L =[1, 3];
+    mesh Th2 = movemesh(Th1, [x, length-y]); //生成对称网格
+    Th2 = change(Th2, label = L);
+    mesh Th = Th2 + Th1;
+    plot(Th,wait=true);
+    return Th;
+}
+
+//方板拉伸网格
+func mesh rectangularmesh(real width, real length, real m, real n)
+{
+    border a1(t=0, width){x=t; y=0; label=1;}
+    border a2(t=0, length){x=width; y=t; label=2;}
+    border a3(t=0, width){x=width-t; y=length; label=3;}
+    border a4(t=0, length){x=0; y=length-t; label=4;}
+    mesh Th = buildmesh(a1(m) + a2(n) + a3(m) +a4(n));
+
+    plot(Th,wait=true);
+    return Th;
+}

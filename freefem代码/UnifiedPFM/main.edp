@@ -1,0 +1,186 @@
+include "meshmodel.edp"
+//材料参数 量纲MPa、N、mm
+real E = 20000, nu = 0.3, sigma0=1, Gc=0.113, SMALL=1e-8;
+real lamda=nu*E/(1+nu)/(1-2*nu), G=E/2/(1+nu);
+//裂纹几何参数
+real ksi=0, c0=2, l0=0.2; //AT2相场
+//real ksi=1, c0=8/3, l0=0.2; //AT1相场
+//real ksi=2, c0=pi, l0=0.5; //pf-CZM
+//退化函数参数
+//real a1=2*ksi/c0*(E*Gc/sigma0^2)/l0, a2=-0.5, a3=0, p=2;
+real a1=2, a2=-0.5, a3=0, p=2;
+//交替求解参数
+real loadinit=1e-2, loadstep = 1e-3, damagethreshold=1e-2, maxIterations=1000;
+//宏观模型参数
+real width = 50, length = 100, crackw = 10, crackl = 0.5, Slope = crackl/(2*crackw), m = 200, n = 100;
+
+//定义裂纹几何函数(一定要加括号！！！freefem直接把函数式进行拼接而不是调用函数)
+macro alpha(d) (ksi*d+(1-ksi)*d^2) //
+macro dalpha(d) (ksi+2*(1-ksi)*d) //
+macro ddalpha(d) (2*(1-ksi)) //
+
+//定义函数
+macro fac1(d) ((1-d)^p) // 
+macro dfac1(d) (-p*(1-d)^(p-1)) // 
+macro ddfac1(d) (p*(p-1)*(1-d)*(p-2)) //
+
+//定义函数
+macro fac2(d) (fac1(d)+a1*d+a1*a2*d^2+a1*a2*a3*d^3) // 
+macro dfac2(d) (dfac1(d)+a1+2*a1*a2*d+3*a1*a2*a3*d^2) // 
+macro ddfac2(d) (ddfac1(d)+2*a1*a2+6*a1*a2*a3*d) // 
+
+//定义退化函数
+macro omega(d) (fac1(d)/fac2(d)) //EOM
+macro domega(d) (dfac1(d)*fac2(d)-fac1(d)*dfac2(d))/(fac2(d)^2) //EOM
+macro ddomega(d) ((ddfac1(d)*fac2(d)-fac1(d)*ddfac2(d))*fac2(d)-2*(dfac1(d)*fac2(d)-fac1(d)*dfac2(d))*dfac2(d))/(fac2(d)^3) //EOM
+//macro ddomega(d) (-1*domega(d)/(1-d+SMALL)) //EOM
+
+//定义刚度矩阵
+macro Q(E,nu)  [ [E/(1-nu^2),nu*E/(1-nu^2),0],
+                [nu*E/(1-nu^2), E/(1-nu^2),0],
+                [0,0,0.5*E/(1+nu)] ]//
+
+//定义应变
+macro epsilon(u,v) [dx(u),dy(v),dy(u)+dx(v)]//
+//主应变
+macro epsilon1(u,v) ((dx(u)+dy(v))/2+sqrt(((dx(u)-dy(v))/2)^2+((dx(v)+dy(u))/2)^2))//
+macro epsilon2(u,v) ((dx(u)+dy(v))/2-sqrt(((dx(u)-dy(v))/2)^2+((dx(v)+dy(u))/2)^2))//
+
+//定义取正函数
+func real isplus(real a)
+{
+    real num = 0;
+    if(a>0)
+    {
+        num = a;
+    }
+    return num;
+}
+
+//定义能量分解
+//无分解
+macro energy(u,v) (0.5*epsilon(u,v)'*Q(E,nu)*epsilon(u,v)) //
+//球量偏量分解
+macro VDplus(u,v) (0.5*(lamda+2*G/3)*isplus((dx(u)+dy(v)))^2+G*((dx(u)-dy(v))^2/2+(dy(u)+dx(v))^2/2)) //
+//谱分解
+macro Mieheplus(u,v) (0.5*lamda*(isplus(epsilon1(u,v)+epsilon2(u,v)))^2+G*((isplus(epsilon1(u,v)))^2+(isplus(epsilon2(u,v)))^2)) // 
+
+//建立宏观有限元模型
+mesh Th=originmesh(width, length, crackl, crackw, m, n);
+//mesh Th=rectangularmesh(width, length, m, n);
+//plot(Th,wait=true);
+
+real displacement = loadinit;
+fespace Vh(Th,[P2,P2]), Eh(Th,P1), Ph(Th,P1); //损伤d用P1元就行，用P2元就不行？
+Vh [u,v],[u1,v1];
+Eh d, d1, deltad, dd, damage, H, energyplus, DH, Energy; 
+Ph DALPHA, DDALPHA, OMEGA, DOMEGA, DDOMEGA;
+d=0; 
+H=sigma0^2/2/E;
+
+int DofP0 = Eh.ndof;
+damage=d;
+
+//varf MacroElastic([u,v],[u1,v1]) = int2d(Th)(omega(d)*epsilon(u,v)'*Q(E,nu)*epsilon(u1,v1))+on(1,u=0,v=0)+on(3,v=0);
+//varf Tensile([u,v],[u1,v1]) = on(3, v=displacement);
+varf PhaseField(d,d1) = int2d(Th)((DDOMEGA*H+DDALPHA*Gc/c0/l0)*d*d1+2*Gc*l0/c0*(dx(d)*dx(d1)+dy(d)*dy(d1)));
+varf PhaseBound(d,d1) = -int2d(Th)((DOMEGA*H+DALPHA*Gc/c0/l0)*d1+2*l0/c0*Gc*(dx(damage)*dx(d1)+dy(damage)*dy(d1)));
+
+ofstream Fx("data/displacement-force.txt");
+Fx<<"displacement-force"<<endl;
+int index = 0;
+real Displacement,Force;
+displacement=loadinit;
+while (index<maxIterations-1)
+{
+    real damageError = 1;
+    int iter=0;
+    displacement = displacement+loadstep;
+    while (damageError > damagethreshold)
+    {
+        //求解位移场
+        OMEGA = omega(damage);
+        solve MacroElastic([u,v],[u1,v1]) = int2d(Th)((OMEGA+1e-8)*epsilon(u,v)'*Q(E,nu)*epsilon(u1,v1))
+            +on(1,v=0)+on(3,v=displacement);
+        Energy = energy(u,v);
+        //plot(Energy,fill=1,value=1,wait=0,cmm="dis"+" displacement"+displacement);
+
+        //计算相场求解所需参数
+        DALPHA = dalpha(d);
+        DDALPHA = ddalpha(d);
+        DOMEGA = domega(d);
+        DDOMEGA = ddomega(d);
+        energyplus = VDplus(u,v);
+
+        for(int i = 0; i < DofP0; i++)
+        {
+            if(H[](i)<energyplus[](i))
+            {
+                H[](i)=energyplus[](i);
+            }
+        }
+
+        //求解相场
+        matrix<real> Kpp = PhaseField(Eh,Eh,solver = sparsesolver);
+        real[int] bp = PhaseBound(0,Eh); 
+        //deltad[] = Kpp^-1*bp;
+
+        solve phasefield(deltad,d1) = 
+        int2d(Th)(DDOMEGA*deltad*H*d1+DDALPHA*Gc/c0/l0*deltad*d1+2*Gc*l0/c0*(dx(deltad)*dx(d1)+dy(deltad)*dy(d1)))
+        +int2d(Th)(DOMEGA*H*d1+DALPHA*Gc/c0/l0*d1+2*Gc*l0/c0*(dx(d)*dx(d1)+dy(d)*dy(d1)));
+        
+        for(int i = 0; i < DofP0; i++)
+        {
+            if(deltad[](i)<0)
+            {
+                deltad[](i)=0;
+            }
+        }
+        d[] = d[]+deltad[];
+        for(int i = 0; i < DofP0; i++)
+        {
+            if(d[](i)>1)
+            {
+                d[](i)=1;
+            }
+        }
+
+        plot(d,fill=1,value=1,wait=0,boundary = 0,cmm="phase"+" displacement"+displacement+" iter"+iter);
+        
+        dd = d - damage;
+        damage = d;
+        for(int i = 0; i < DofP0; i++)
+        {
+            if(damage[](i)<0)
+            {
+                damage[](i)=0;
+            }
+        }
+
+        damageError = (dd[]).max;
+        real[int] absbp=abs(bp);
+        real Rhs = absbp.max;
+        //damageError = Rhs;
+        //damageError = 0;
+
+        //迭代记录
+        iter = iter+1;
+        index = index+1;
+        Displacement = displacement;
+        Force = int1d(Th,3)(E/(1-nu^2)*dy(v));
+        //Force = int1d(Th,3)(E/2/(1+nu)*(dx(v)+dy(u)));
+        cout<<"iteration="<<iter<<endl;
+        cout<<"iter="<<iter<<endl;
+        cout<<"displacement="<<displacement<<endl;
+        cout<<"Force="<<Force<<endl;
+        cout<<"damageError="<<damageError<<endl;
+        cout<<"Rhs="<<Rhs<<endl;
+
+        if(Force<0.01)
+        {
+            index=maxIterations;
+            break;
+        }
+    }
+    Fx<<Displacement<<"  "<<Force<<endl;
+}

@@ -1,48 +1,49 @@
+load "iovtk"
+load "gmsh"
 include "meshmodel.edp"
-//材料参数 量纲MPa、N、mm
-real E = 20000, nu = 0.3, sigma0=1, Gc=0.113, SMALL=1e-8;
+//material propoties units:MPa、N、mm
+real E = 210000, nu = 0.3, sigma0=10, Gc=2.7, SMALL=1e-8;
 real lamda=nu*E/(1+nu)/(1-2*nu), G=E/2/(1+nu);
-//裂纹几何参数
-real ksi=0, c0=2, l0=0.2; //AT2相场
-//real ksi=1, c0=8/3, l0=0.2; //AT1相场
+//crack shape parameters
+real ksi=0, c0=2, l0=0.0375; //AT2 pfm
+//real ksi=1, c0=8/3, l0=0.2; //AT1 pfm
 //real ksi=2, c0=pi, l0=0.5; //pf-CZM
-//退化函数参数
+//degradation function parameters
 //real a1=2*ksi/c0*(E*Gc/sigma0^2)/l0, a2=-0.5, a3=0, p=2;
 real a1=2, a2=-0.5, a3=0, p=2;
-//交替求解参数
-real loadinit=1e-2, loadstep = 1e-3, damagethreshold=1e-2, maxIterations=1000;
-//宏观模型参数
-real width = 50, length = 100, crackw = 10, crackl = 0.5, Slope = crackl/(2*crackw), m = 200, n = 100;
+//solver parameters
+real loadinit=4.5e-3, loadstep = 5e-5, damagethreshold=1e-2, maxIterations=1000;
+//model parameters
+real width = 1, length = 1, crackw = 0.5, crackl = 0.005, Slope = crackl/(2*crackw), m = 20, n = 20;
 
-//定义裂纹几何函数(一定要加括号！！！freefem直接把函数式进行拼接而不是调用函数)
+//define the crack shape function
 macro alpha(d) (ksi*d+(1-ksi)*d^2) //
 macro dalpha(d) (ksi+2*(1-ksi)*d) //
 macro ddalpha(d) (2*(1-ksi)) //
 
-//定义函数
+//function
 macro fac1(d) ((1-d)^p) // 
 macro dfac1(d) (-p*(1-d)^(p-1)) // 
 macro ddfac1(d) (p*(p-1)*(1-d)*(p-2)) //
 
-//定义函数
+//function
 macro fac2(d) (fac1(d)+a1*d+a1*a2*d^2+a1*a2*a3*d^3) // 
 macro dfac2(d) (dfac1(d)+a1+2*a1*a2*d+3*a1*a2*a3*d^2) // 
 macro ddfac2(d) (ddfac1(d)+2*a1*a2+6*a1*a2*a3*d) // 
 
-//定义退化函数
+//define the degradation function
 macro omega(d) (fac1(d)/fac2(d)) //EOM
 macro domega(d) (dfac1(d)*fac2(d)-fac1(d)*dfac2(d))/(fac2(d)^2) //EOM
 macro ddomega(d) ((ddfac1(d)*fac2(d)-fac1(d)*ddfac2(d))*fac2(d)-2*(dfac1(d)*fac2(d)-fac1(d)*dfac2(d))*dfac2(d))/(fac2(d)^3) //EOM
-//macro ddomega(d) (-1*domega(d)/(1-d+SMALL)) //EOM
 
-//定义刚度矩阵
+//stiffness matrix
 macro Q(E,nu)  [ [E/(1-nu^2),nu*E/(1-nu^2),0],
                 [nu*E/(1-nu^2), E/(1-nu^2),0],
-                [0,0,0.5*E/(1+nu)] ]//
+                [0,0,0.5*E/(1+nu)] ]  //
 
-//定义应变
+//strain
 macro epsilon(u,v) [dx(u),dy(v),dy(u)+dx(v)]//
-//主应变
+//principle of strain 
 macro epsilon1(u,v) ((dx(u)+dy(v))/2+sqrt(((dx(u)-dy(v))/2)^2+((dx(v)+dy(u))/2)^2))//
 macro epsilon2(u,v) ((dx(u)+dy(v))/2-sqrt(((dx(u)-dy(v))/2)^2+((dx(v)+dy(u))/2)^2))//
 
@@ -57,37 +58,42 @@ func real isplus(real a)
     return num;
 }
 
-//定义能量分解
-//无分解
+//energy decomposition
+//no decomposition
 macro energy(u,v) (0.5*epsilon(u,v)'*Q(E,nu)*epsilon(u,v)) //
-//球量偏量分解
+//volumetric-deviatoric decomposition
 macro VDplus(u,v) (0.5*(lamda+2*G/3)*isplus((dx(u)+dy(v)))^2+G*((dx(u)-dy(v))^2/2+(dy(u)+dx(v))^2/2)) //
-//谱分解
+//spectral decomposition 
 macro Mieheplus(u,v) (0.5*lamda*(isplus(epsilon1(u,v)+epsilon2(u,v)))^2+G*((isplus(epsilon1(u,v)))^2+(isplus(epsilon2(u,v)))^2)) // 
 
-//建立宏观有限元模型
-mesh Th=originmesh(width, length, crackl, crackw, m, n);
-//mesh Th=rectangularmesh(width, length, m, n);
-//plot(Th,wait=true);
+//load mesh
+mesh Th=gmshload("mesh/tension.msh");
+plot(Th,wait=true);
 
 real displacement = loadinit;
-fespace Vh(Th,[P2,P2]), Eh(Th,P1), Ph(Th,P1); //损伤d用P1元就行，用P2元就不行？
+fespace Vh(Th,[P1,P1]), Eh(Th,P1), Ph(Th,P1); //损伤d用P1元就行，用P2元就不行？
 Vh [u,v],[u1,v1];
 Eh d, d1, deltad, dd, damage, H, energyplus, DH, Energy; 
 Ph DALPHA, DDALPHA, OMEGA, DOMEGA, DDOMEGA;
 d=0; 
-H=sigma0^2/2/E;
+//H=sigma0^2/2/E;
+H=0;
 
 int DofP0 = Eh.ndof;
 damage=d;
 
-//varf MacroElastic([u,v],[u1,v1]) = int2d(Th)(omega(d)*epsilon(u,v)'*Q(E,nu)*epsilon(u1,v1))+on(1,u=0,v=0)+on(3,v=0);
-//varf Tensile([u,v],[u1,v1]) = on(3, v=displacement);
-varf PhaseField(d,d1) = int2d(Th)((DDOMEGA*H+DDALPHA*Gc/c0/l0)*d*d1+2*Gc*l0/c0*(dx(d)*dx(d1)+dy(d)*dy(d1)));
-varf PhaseBound(d,d1) = -int2d(Th)((DOMEGA*H+DALPHA*Gc/c0/l0)*d1+2*l0/c0*Gc*(dx(damage)*dx(d1)+dy(damage)*dy(d1)));
+//define variation
+varf Elastic([u,v],[u1,v1]) = int2d(Th)((OMEGA+1e-8)*epsilon(u,v)'*Q(E,nu)*epsilon(u1,v1))+on(1,u=0,v=0)+on(2,u=0,v=0);
+varf Tensile([u,v],[u1,v1]) = on(2, u=0,v=displacement);
+//varf PhaseField(d,d1) = int2d(Th)((DDOMEGA*H+DDALPHA*Gc/c0/l0)*d*d1+2*Gc*l0/c0*(dx(d)*dx(d1)+dy(d)*dy(d1)));
+//varf PhaseBound(d,d1) = -int2d(Th)((DOMEGA*H+DALPHA*Gc/c0/l0)*d1+2*l0/c0*Gc*(dx(damage)*dx(d1)+dy(damage)*dy(d1)));
+varf PhaseField(d,d1) = int2d(Th)((2*H+Gc/l0)*d*d1+Gc*l0*(dx(d)*dx(d1)+dy(d)*dy(d1)));
+varf PhaseBound(d,d1) = int2d(Th)(2*H*d1);
 
-ofstream Fx("data/displacement-force.txt");
+ofstream Fx("output/displacement-force.txt");
 Fx<<"displacement-force"<<endl;
+savevtk("output/phasefield/damage000.vtu", Th, damage, dataname="damage");
+
 int index = 0;
 real Displacement,Force;
 displacement=loadinit;
@@ -98,14 +104,14 @@ while (index<maxIterations-1)
     displacement = displacement+loadstep;
     while (damageError > damagethreshold)
     {
-        //求解位移场
+        //solve displacement
         OMEGA = omega(damage);
-        solve MacroElastic([u,v],[u1,v1]) = int2d(Th)((OMEGA+1e-8)*epsilon(u,v)'*Q(E,nu)*epsilon(u1,v1))
-            +on(1,v=0)+on(3,v=displacement);
+        matrix Kuu = Elastic(Vh,Vh,solver = sparsesolver);
+        real[int] bu = Tensile(0,Vh);
+        u[] = Kuu^-1*bu;
         Energy = energy(u,v);
-        //plot(Energy,fill=1,value=1,wait=0,cmm="dis"+" displacement"+displacement);
 
-        //计算相场求解所需参数
+        //compute parameters
         DALPHA = dalpha(d);
         DDALPHA = ddalpha(d);
         DOMEGA = domega(d);
@@ -119,29 +125,21 @@ while (index<maxIterations-1)
                 H[](i)=energyplus[](i);
             }
         }
-
-        //求解相场
-        matrix<real> Kpp = PhaseField(Eh,Eh,solver = sparsesolver);
+        //solve phase field
+        matrix Kpp = PhaseField(Eh,Eh,solver = sparsesolver);
         real[int] bp = PhaseBound(0,Eh); 
-        //deltad[] = Kpp^-1*bp;
-
-        solve phasefield(deltad,d1) = 
-        int2d(Th)(DDOMEGA*deltad*H*d1+DDALPHA*Gc/c0/l0*deltad*d1+2*Gc*l0/c0*(dx(deltad)*dx(d1)+dy(deltad)*dy(d1)))
-        +int2d(Th)(DOMEGA*H*d1+DALPHA*Gc/c0/l0*d1+2*Gc*l0/c0*(dx(d)*dx(d1)+dy(d)*dy(d1)));
+        d[] = Kpp^-1*bp;
         
-        for(int i = 0; i < DofP0; i++)
-        {
-            if(deltad[](i)<0)
-            {
-                deltad[](i)=0;
-            }
-        }
-        d[] = d[]+deltad[];
+        //bounded(Not necessary, but enforced as a guarantee)
         for(int i = 0; i < DofP0; i++)
         {
             if(d[](i)>1)
             {
-                d[](i)=1;
+                d[](i) = 1;
+            }
+            else if(d[](i)<0)
+            {
+                d[](i) = 0;
             }
         }
 
@@ -149,38 +147,30 @@ while (index<maxIterations-1)
         
         dd = d - damage;
         damage = d;
-        for(int i = 0; i < DofP0; i++)
-        {
-            if(damage[](i)<0)
-            {
-                damage[](i)=0;
-            }
-        }
-
+        //Convergence criterion
         damageError = (dd[]).max;
-        real[int] absbp=abs(bp);
-        real Rhs = absbp.max;
+        //real[int] absbp=abs(bp);
+        //real Rhs = absbp.max;
         //damageError = Rhs;
-        //damageError = 0;
 
-        //迭代记录
+        //record
         iter = iter+1;
-        index = index+1;
         Displacement = displacement;
-        Force = int1d(Th,3)(E/(1-nu^2)*dy(v));
-        //Force = int1d(Th,3)(E/2/(1+nu)*(dx(v)+dy(u)));
+        Force = int1d(Th,2)([nu*E/(1-nu^2), E/(1-nu^2),0]'*epsilon(u,v));
         cout<<"iteration="<<iter<<endl;
         cout<<"iter="<<iter<<endl;
         cout<<"displacement="<<displacement<<endl;
         cout<<"Force="<<Force<<endl;
         cout<<"damageError="<<damageError<<endl;
-        cout<<"Rhs="<<Rhs<<endl;
+        //cout<<"Rhs="<<Rhs<<endl;
 
-        if(Force<0.01)
+        if(Force<1)
         {
             index=maxIterations;
             break;
         }
     }
+    index = index+1;
     Fx<<Displacement<<"  "<<Force<<endl;
+    savevtk("output/phasefield/damage00"+index+".vtu", Th, damage, dataname="damage");
 }

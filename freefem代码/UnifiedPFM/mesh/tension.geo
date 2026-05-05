@@ -55,6 +55,6 @@ Mesh.Algorithm = 8;
 
 Mesh 2;
 //保存网格文件
-Mesh.MshFileVersion = 2.2; // 设置为版本 2 ASCII
+//Mesh.MshFileVersion = 2.2; // 设置为版本 2 ASCII
 Mesh.Format = 1; // 设置为 ASCII 格式（1 = ASCII, 2 = Binary）
-Save "tension.msh";
+Save "tension.xml";

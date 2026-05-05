@@ -1,18 +1,20 @@
 load "iovtk"
 load "gmsh"
+load "ff-Ipopt"
 include "meshmodel.edp"
 //material propoties units:MPa、N、mm
-real E = 210000, nu = 0.3, sigma0=10, Gc=2.7, SMALL=1e-8;
+real E = 210000, nu = 0.3, sigma0=2000, Gc=2.7, SMALL=1e-8;
 real lamda=nu*E/(1+nu)/(1-2*nu), G=E/2/(1+nu);
 //crack shape parameters
-real ksi=0, c0=2, l0=0.0375; //AT2 pfm
+//real ksi=0, c0=2, l0=0.0375; //AT2 pfm
 //real ksi=1, c0=8/3, l0=0.2; //AT1 pfm
-//real ksi=2, c0=pi, l0=0.5; //pf-CZM
+real ksi=2, c0=pi, l0=0.02; //pf-CZM
 //degradation function parameters
-//real a1=2*ksi/c0*(E*Gc/sigma0^2)/l0, a2=-0.5, a3=0, p=2;
-real a1=2, a2=-0.5, a3=0, p=2;
+//real a1=2.0*ksi/c0*(E*Gc/sigma0^2)/l0, a2=-0.5, a3=0.0, p=2.0;
+real a1=2.0*ksi/c0*(E*Gc/sigma0^2)/l0, a2=1.3868, a3=0.6567, p=2;
+//real a1=2.0, a2=-0.5, a3=0, p=2;
 //solver parameters
-real loadinit=4.5e-3, loadstep = 5e-5, damagethreshold=1e-2, maxIterations=1000;
+real loadinit=0e-1, loadstep = 1e-4, damagethreshold=1e-2, maxIterations=1000;
 //model parameters
 real width = 1, length = 1, crackw = 0.5, crackl = 0.005, Slope = crackl/(2*crackw), m = 20, n = 20;
 
@@ -22,14 +24,14 @@ macro dalpha(d) (ksi+2*(1-ksi)*d) //
 macro ddalpha(d) (2*(1-ksi)) //
 
 //function
-macro fac1(d) ((1-d)^p) // 
-macro dfac1(d) (-p*(1-d)^(p-1)) // 
-macro ddfac1(d) (p*(p-1)*(1-d)*(p-2)) //
+macro fac1(d) ((1.0-d)^p) // 
+macro dfac1(d) (-p*(1.0-d)^(p-1.0)) // 
+macro ddfac1(d) (p*(p-1.0)*(1.0-d)^(p-2.0)) //
 
 //function
-macro fac2(d) (fac1(d)+a1*d+a1*a2*d^2+a1*a2*a3*d^3) // 
-macro dfac2(d) (dfac1(d)+a1+2*a1*a2*d+3*a1*a2*a3*d^2) // 
-macro ddfac2(d) (ddfac1(d)+2*a1*a2+6*a1*a2*a3*d) // 
+macro fac2(d) (fac1(d)+a1*d+a1*a2*d^2.0+a1*a2*a3*d^3.0) // 
+macro dfac2(d) (dfac1(d)+a1+2.0*a1*a2*d+3.0*a1*a2*a3*d^2.0) // 
+macro ddfac2(d) (ddfac1(d)+2.0*a1*a2+6.0*a1*a2*a3*d) // 
 
 //define the degradation function
 macro omega(d) (fac1(d)/fac2(d)) //EOM
@@ -71,24 +73,25 @@ mesh Th=gmshload("mesh/tension.msh");
 plot(Th,wait=true);
 
 real displacement = loadinit;
-fespace Vh(Th,[P1,P1]), Eh(Th,P1), Ph(Th,P1); //损伤d用P1元就行，用P2元就不行？
+fespace Vh(Th,[P1,P1]), Eh(Th,P1), Ph(Th,P0); //损伤d用P1元就行，用P2元就不行？
 Vh [u,v],[u1,v1];
 Eh d, d1, deltad, dd, damage, H, energyplus, DH, Energy; 
-Ph DALPHA, DDALPHA, OMEGA, DOMEGA, DDOMEGA;
+Ph ALPHA, DALPHA, DDALPHA, OMEGA, DOMEGA, DDOMEGA;
 d=0; 
-//H=sigma0^2/2/E;
-H=0;
+H=sigma0^2/2/E;
+//H=0;
 
 int DofP0 = Eh.ndof;
 damage=d;
 
 //define variation
-varf Elastic([u,v],[u1,v1]) = int2d(Th)((OMEGA+1e-8)*epsilon(u,v)'*Q(E,nu)*epsilon(u1,v1))+on(1,u=0,v=0)+on(2,u=0,v=0);
-varf Tensile([u,v],[u1,v1]) = on(2, u=0,v=displacement);
-//varf PhaseField(d,d1) = int2d(Th)((DDOMEGA*H+DDALPHA*Gc/c0/l0)*d*d1+2*Gc*l0/c0*(dx(d)*dx(d1)+dy(d)*dy(d1)));
-//varf PhaseBound(d,d1) = -int2d(Th)((DOMEGA*H+DALPHA*Gc/c0/l0)*d1+2*l0/c0*Gc*(dx(damage)*dx(d1)+dy(damage)*dy(d1)));
-varf PhaseField(d,d1) = int2d(Th)((2*H+Gc/l0)*d*d1+Gc*l0*(dx(d)*dx(d1)+dy(d)*dy(d1)));
-varf PhaseBound(d,d1) = int2d(Th)(2*H*d1);
+varf Elastic([u,v],[u1,v1]) = int2d(Th)((OMEGA+1e-8)*epsilon(u,v)'*Q(E,nu)*epsilon(u1,v1))+on(1,v=0)+on(2,v=0);
+varf Tensile([u,v],[u1,v1]) = on(1,v=-displacement)+on(2, v=displacement);
+varf PhaseField(d,d1) = int2d(Th)((DDOMEGA*H+DDALPHA*Gc/c0/l0)*d*d1+2*Gc*l0/c0*(dx(d)*dx(d1)+dy(d)*dy(d1)));
+varf PhaseBound(d,d1) = -int2d(Th)((DOMEGA*H+DALPHA*Gc/c0/l0)*d1+2*l0/c0*Gc*(dx(damage)*dx(d1)+dy(damage)*dy(d1)));
+//varf PhaseField(d,d1) = int2d(Th)((2*H+Gc/l0)*d*d1+Gc*l0*(dx(d)*dx(d1)+dy(d)*dy(d1)));
+//varf PhaseBound(d,d1) = int2d(Th)(2*H*d1);
+varf PhaseEnergy(d,d1) = int2d(Th)((DOMEGA*H+ALPHA*Gc/c0/l0)*d*d1+2*l0/c0*Gc*(dx(d)*dx(d1)+dy(d)*dy(d1)));
 
 ofstream Fx("output/displacement-force.txt");
 Fx<<"displacement-force"<<endl;
@@ -109,9 +112,9 @@ while (index<maxIterations-1)
         matrix Kuu = Elastic(Vh,Vh,solver = sparsesolver);
         real[int] bu = Tensile(0,Vh);
         u[] = Kuu^-1*bu;
-        Energy = energy(u,v);
 
         //compute parameters
+        ALPHA = alpha(d);
         DALPHA = dalpha(d);
         DDALPHA = ddalpha(d);
         DOMEGA = domega(d);
@@ -128,8 +131,15 @@ while (index<maxIterations-1)
         //solve phase field
         matrix Kpp = PhaseField(Eh,Eh,solver = sparsesolver);
         real[int] bp = PhaseBound(0,Eh); 
-        d[] = Kpp^-1*bp;
-        
+        deltad[] = Kpp^-1*bp;
+        for(int i = 0; i < DofP0; i++)
+        {
+            if(deltad[](i)<0)
+            {
+                deltad[](i) = 0;
+            }
+        }
+        d[] = d[] + deltad[];
         //bounded(Not necessary, but enforced as a guarantee)
         for(int i = 0; i < DofP0; i++)
         {
@@ -170,6 +180,7 @@ while (index<maxIterations-1)
             break;
         }
     }
+
     index = index+1;
     Fx<<Displacement<<"  "<<Force<<endl;
     savevtk("output/phasefield/damage00"+index+".vtu", Th, damage, dataname="damage");

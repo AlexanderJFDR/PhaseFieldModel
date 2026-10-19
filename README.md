@@ -14,8 +14,8 @@ This repository documents the author's learning journey of the **Phase Field Met
 | **Author** | Heliang You, Harbin Institute of Technology |
 | **Date** | October 18, 2026 |
 | **Length** | 46 pages, 14 chapters, 20 figures, 47 references |
-| **Language** | Chinese |
-| **File** | `断裂相场法总结.pdf` |
+| **Language** | Chinese, English |
+| **File** | `断裂相场法总结.pdf`, `Summary of the Phase-Field Method for Fracture.pdf` |
 
 The PDF is the current and authoritative version of the document. It extends the earlier outline to **14 chapters**, including new sections on the second-order stability of phase field solutions, advanced solution algorithms, dynamic fracture pitfalls, and length-scale-insensitive phase field models.
 
@@ -27,6 +27,7 @@ The PDF is the current and authoritative version of the document. It extends the
 断裂相场法/
 │
 ├── 断裂相场法总结.pdf            # Current summary of PFM (Chinese, 46 pages)
+├── Summary of the Phase-Field Method for Fracture.pdf            # Current summary of PFM (English, 48 pages)
 │
 ├── abaqus代码/
 │   └── AT2相场拉伸/              # Abaqus UEL implementation (AT2 model)
@@ -201,15 +202,6 @@ abaqus job=origintension user=AT2.for
 - [Thermo-Mechanic Phase Field Model](https://github.com/AlexanderJFDR/Thermo-Mechanic-PhaseField-Model.git)
 - [Spall Phase Field VUEL](https://github.com/AlexanderJFDR/spall_phase_field_VUEL.git)
 - [PF-CZM Abaqus (Wu Jianying)](https://github.com/jianyingwu/pfczm-abaqus)
-
----
-
-## Language Note
-
-- The current summary document (`断裂相场法总结.pdf`) and all equation derivations are available **only in Chinese**.
-- This README provides an English overview of the document's structure; it is not a full translation.
-- The older `.docx` filename is obsolete and has been replaced by the PDF in this repository.
-- An English version of the summary may be released in the future — depending on the pace of AI-assisted translation, as the author may not have time for manual translation.
 
 ---
 
